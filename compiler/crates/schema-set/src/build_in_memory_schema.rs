@@ -67,6 +67,7 @@ use schema::UnionID;
 use crate::SEMANTIC_NON_NULL;
 use crate::SEMANTIC_NON_NULL_LEVELS_ARG;
 use crate::builtin_scalars::BUILTIN_SCALAR_SET;
+use crate::print_schema_set::print_set_directive_value;
 use crate::schema_set::HasCoordinate;
 use crate::schema_set::HasDefinitionItem;
 use crate::schema_set::SchemaDefinitionItem;
@@ -424,8 +425,17 @@ fn build_arguments(
     set_arguments: &StringKeyIndexMap<SetArgument>,
     type_map: &HashMap<StringKey, Type>,
 ) -> DiagnosticsResult<ArgumentDefinitions> {
-    let arguments = set_arguments
-        .values()
+    // Arguments are stored in insertion order (which depends on input read
+    // order); sort by name so the built schema is deterministic and matches the
+    // alphabetical ordering the used-schema printer emits.
+    //
+    // NOTE: we probably want to update this to preserve original order, but to do that
+    // we would need to have a more deterministic merge-to-ordering.
+    let mut sorted: Vec<&SetArgument> = set_arguments.values().collect();
+    sorted.sort_by_key(|argument| argument.name);
+
+    let arguments = sorted
+        .into_iter()
         .map(|set_argument| {
             let argument_location = first_location(&set_argument.definition);
             Ok(Argument {
@@ -441,9 +451,25 @@ fn build_arguments(
 }
 
 fn build_directive_values(set_directives: &[SetDirectiveValue]) -> Vec<DirectiveValue> {
-    set_directives
-        .iter()
-        .map(SetDirectiveValue::to_directive_value)
+    // Applied directives (and their argument values) are stored in input order,
+    // which depends on input read order. Sort them the same way the used-schema
+    // printer does — directives by their rendered `@name(args)` form, argument
+    // values by name — so the built schema is deterministic and byte-for-byte
+    // matches the printed ordering.
+    //
+    // NOTE this is *mildly* breaking with the spec, but our merging is as well so it's not the worst.
+    let mut sorted: Vec<&SetDirectiveValue> = set_directives.iter().collect();
+    sorted.sort_by_cached_key(|directive| print_set_directive_value(directive));
+
+    sorted
+        .into_iter()
+        .map(|set_directive| {
+            let mut directive_value = set_directive.to_directive_value();
+            directive_value
+                .arguments
+                .sort_by_key(|argument| argument.name.0);
+            directive_value
+        })
         .collect()
 }
 
@@ -608,8 +634,14 @@ fn resolve_interface_ids(
     members: &StringKeyIndexMap<SetMemberType>,
     type_map: &HashMap<StringKey, Type>,
 ) -> DiagnosticsResult<Vec<InterfaceID>> {
-    members
-        .values()
+    // `interfaces` is stored in insertion order (which depends on input read
+    // order); sort by name so the implemented-interface list is deterministic
+    // and matches the alphabetical ordering the used-schema printer emits.
+    let mut sorted: Vec<&SetMemberType> = members.values().collect();
+    sorted.sort_by_key(|member| member.name);
+
+    sorted
+        .into_iter()
         .map(|member| match type_map.get(&member.name) {
             Some(Type::Interface(id)) => Ok(*id),
             Some(_) => Err(vec![Diagnostic::error(
@@ -758,6 +790,66 @@ mod tests {
         assert!(!field.type_.is_non_null());
         // ...and `semantic_type()` reconstructs the non-null form.
         assert!(field.semantic_type().is_non_null());
+    }
+
+    #[test]
+    fn sorts_arguments_interfaces_and_directives_alphabetically() {
+        // Arguments, implemented interfaces, and applied directives are declared
+        // here in non-alphabetical order. The built schema must return them
+        // alphabetically so its ordering is independent of input read order (a
+        // flatbuffer schema is always fully sorted, and callsites moving off it
+        // must not see ordering churn).
+        let sdl = "\
+directive @zed on OBJECT | FIELD_DEFINITION
+directive @abc on OBJECT | FIELD_DEFINITION
+interface Zeta { id: ID }
+interface Alpha { id: ID }
+interface Mango { id: ID }
+type Node implements Zeta & Alpha & Mango @zed @abc {
+  id: ID
+  search(zebra: Int, alpha: Int, mango: Int): String @zed @abc
+}
+type Query { node: Node }";
+        let source = SourceLocationKey::standalone("app.graphql");
+        let schema = build_in_memory_schema(&schema_set_from(sdl, source)).unwrap();
+
+        let node_type = schema.get_type("Node".intern()).expect("Node exists");
+        let node = schema.object(node_type.get_object_id().expect("Node is an object"));
+
+        // Implemented interfaces resolve in alphabetical name order.
+        let interface_names: Vec<String> = node
+            .interfaces
+            .iter()
+            .map(|id| schema.interface(*id).name.item.to_string())
+            .collect();
+        assert_eq!(interface_names, vec!["Alpha", "Mango", "Zeta"]);
+
+        // Directives applied to the type are sorted by name.
+        let type_directives: Vec<String> =
+            node.directives.iter().map(|d| d.name.to_string()).collect();
+        assert_eq!(type_directives, vec!["abc", "zed"]);
+
+        let search = schema.field(
+            schema
+                .named_field(node_type, "search".intern())
+                .expect("Node.search exists"),
+        );
+
+        // Field arguments are sorted by name.
+        let argument_names: Vec<String> = search
+            .arguments
+            .iter()
+            .map(|arg| arg.name.item.to_string())
+            .collect();
+        assert_eq!(argument_names, vec!["alpha", "mango", "zebra"]);
+
+        // Directives applied to the field are sorted by name too.
+        let field_directives: Vec<String> = search
+            .directives
+            .iter()
+            .map(|d| d.name.to_string())
+            .collect();
+        assert_eq!(field_directives, vec!["abc", "zed"]);
     }
 
     #[test]
