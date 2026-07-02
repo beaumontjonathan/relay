@@ -71,6 +71,7 @@ fragment Foo_user on User {
   #                 type_confirmed: false,
   #                 resolver_type: ResolverModule,
   #                 return_fragment: None,
+  #                 may_waterfall: false,
   #             },
   #         },
   #     ],

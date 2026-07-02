@@ -58,6 +58,7 @@ fragment FeedbackFragmentType on User {
   #                 type_confirmed: false,
   #                 resolver_type: ResolverModule,
   #                 return_fragment: None,
+  #                 may_waterfall: false,
   #             },
   #         },
   #         ClientEdgeModelResolver {
@@ -87,6 +88,7 @@ fragment FeedbackFragmentType on User {
   #                 type_confirmed: false,
   #                 resolver_type: ResolverModule,
   #                 return_fragment: None,
+  #                 may_waterfall: false,
   #             },
   #         },
   #     ],

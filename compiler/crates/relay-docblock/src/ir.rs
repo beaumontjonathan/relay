@@ -26,6 +26,7 @@ use docblock_shared::IMPORT_NAME_ARGUMENT_NAME;
 use docblock_shared::IMPORT_PATH_ARGUMENT_NAME;
 use docblock_shared::INJECT_FRAGMENT_DATA_ARGUMENT_NAME;
 use docblock_shared::LIVE_ARGUMENT_NAME;
+use docblock_shared::MAY_WATERFALL_ARGUMENT_NAME;
 use docblock_shared::RELAY_RESOLVER_DIRECTIVE_NAME;
 use docblock_shared::RELAY_RESOLVER_MODEL_DIRECTIVE_NAME;
 use docblock_shared::RELAY_RESOLVER_MODEL_GENERATED_ID_FIELD_DIRECTIVE_NAME;
@@ -349,6 +350,14 @@ trait ResolverIr: Sized {
     fn property_lookup_name(&self) -> Option<WithLocation<StringKey>>;
     fn return_fragment(&self) -> Option<WithLocation<FragmentDefinitionName>>;
 
+    /// Whether the resolver declared `@mayWaterfall`, i.e. it may return a
+    /// pointer to a different server object than the one it shadows. Only
+    /// meaningful for shadow resolvers (`@returnFragment`); every other resolver
+    /// kind can never waterfall, so this defaults to `None`.
+    fn may_waterfall(&self) -> Option<UnpopulatedIrField> {
+        None
+    }
+
     fn to_graphql_schema_ast(
         self,
         project_config: ResolverProjectConfig<'_, '_>,
@@ -500,6 +509,12 @@ trait ResolverIr: Sized {
             arguments.push(string_argument(
                 RETURN_FRAGMENT_ARGUMENT_NAME.0,
                 return_fragment.map(|x| x.0),
+            ));
+        }
+        if let Some(may_waterfall) = self.may_waterfall() {
+            arguments.push(true_argument(
+                MAY_WATERFALL_ARGUMENT_NAME.0,
+                may_waterfall.key_location,
             ));
         }
         let schema = project_config.schema;
@@ -767,6 +782,10 @@ pub struct TerseRelayResolverIr {
     pub deprecated: Option<IrField>,
     pub semantic_non_null: Option<ConstantDirective>,
     pub live: Option<UnpopulatedIrField>,
+    /// The `@mayWaterfall` docblock tag: this shadow resolver may return a
+    /// pointer to a different server object, so consumers must acknowledge the
+    /// possible refetch with `@waterfall`. Only valid alongside `@returnFragment`.
+    pub may_waterfall: Option<UnpopulatedIrField>,
     pub location: Location,
     pub fragment_arguments: Option<Vec<Argument>>,
     pub source_hash: ResolverSourceHash,
@@ -886,6 +905,10 @@ impl ResolverIr for TerseRelayResolverIr {
 
     fn return_fragment(&self) -> Option<WithLocation<FragmentDefinitionName>> {
         self.return_fragment
+    }
+
+    fn may_waterfall(&self) -> Option<UnpopulatedIrField> {
+        self.may_waterfall
     }
 }
 

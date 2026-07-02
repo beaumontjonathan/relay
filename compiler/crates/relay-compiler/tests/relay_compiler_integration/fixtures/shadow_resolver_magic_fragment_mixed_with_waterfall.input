@@ -1,15 +1,20 @@
-==================================== INPUT ====================================
-// @waterfall on a shadow field is a HARD ERROR even when the return interface has
-// a client-extension implementor. A shadow field is never a waterfall: its
-// consumer selections are fetched in the main operation (server arm transplanted,
-// client arm read via the model edge), so there is no client query to gate. The
-// waterfall-forbidden check fires before the routing splits on the implementor
-// set, so the mixed (server + client) case errors just like the pure-server case.
+// The resolver declares `@mayWaterfall`, so consumers must acknowledge the
+// possible cross-object refetch with `@waterfall`. `@waterfall` on a mixed shadow
+// field (return interface implemented by both a server type and a client model
+// type) keeps BOTH arms for the server member:
+// the main-operation transplant (the consumer's `title` is spliced onto the
+// shadowed `page` field — see the `UserConsumerQuery` operation `text` below) AND
+// a generated `ClientEdgeQuery` backstop. The transplant serves the common case
+// (pointer targets the shadowed record) from the store with no roundtrip; the
+// backstop refetches the draft case (pointer targets a different server object).
+// The client member is still read via its model resolver. Regression guard: the
+// transplant must NOT be suppressed under `@waterfall`.
 //- UserCombinedPage.js
 /**
  * @relayField User.combined_page: IPage
  * @rootFragment UserCombinedPageResolverFragment
  * @returnFragment UserCombinedPageReturnFragment
+ * @mayWaterfall
  */
 graphql`fragment UserCombinedPageResolverFragment on User {
   page {
@@ -63,11 +68,3 @@ interface IPage implements Node {
 }
 
 extend type Page implements IPage
-==================================== OUTPUT ===================================
-✖︎ Unexpected `@waterfall` directive. Only fields that are backed by a Client Edge and point to a server object should be annotated with the `@waterfall` directive.
-
-  UserConsumer.js:3:19
-    2 │   me {
-    3 │     combined_page @waterfall {
-      │                   ^^^^^^^^^^
-    4 │       title

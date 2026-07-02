@@ -1,14 +1,14 @@
-==================================== INPUT ====================================
 //- UserCombinedPage.js
-// @waterfall on a shadow-resolver field is a HARD ERROR: the field is explicitly
-// NOT a waterfall. Its consumer selections are transplanted
-// onto the shadowed server field in the MAIN operation, so the data is already
-// fetched -- there is no separate client query to gate. This fixture asserts the
-// error is reported when a consumer annotates the shadow field with @waterfall.
+// The resolver declares `@mayWaterfall`, so every consumer MUST acknowledge the
+// possible cross-object refetch with `@waterfall`. This consumer omits it, which
+// is a hard error (`MissingWaterfall`): a `@mayWaterfall` resolver may return a
+// pointer to a DIFFERENT server object, and without `@waterfall` no refetch
+// backstop is generated, so those selections would be silently dropped.
 /**
  * @relayField User.combined_page: IPage
  * @rootFragment UserCombinedPageResolverFragment
  * @returnFragment UserCombinedPageReturnFragment
+ * @mayWaterfall
  */
 graphql`fragment UserCombinedPageResolverFragment on User {
   page {
@@ -19,7 +19,7 @@ graphql`fragment UserCombinedPageResolverFragment on User {
 //- UserConsumer.js
 graphql`query UserConsumerQuery {
   me {
-    combined_page @waterfall {
+    combined_page {
       title
     }
   }
@@ -50,11 +50,3 @@ interface IPage implements Node {
 }
 
 extend type Page implements IPage
-==================================== OUTPUT ===================================
-✖︎ Unexpected `@waterfall` directive. Only fields that are backed by a Client Edge and point to a server object should be annotated with the `@waterfall` directive.
-
-  UserConsumer.js:3:19
-    2 │   me {
-    3 │     combined_page @waterfall {
-      │                   ^^^^^^^^^^
-    4 │       title

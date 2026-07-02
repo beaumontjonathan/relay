@@ -1,10 +1,9 @@
-// @waterfall on a shadow field is a HARD ERROR even when the return interface has
-// a client-extension implementor. A shadow field is never a waterfall: its
-// consumer selections are fetched in the main operation (server arm transplanted,
-// client arm read via the model edge), so there is no client query to gate. The
-// waterfall-forbidden check fires before the routing splits on the implementor
-// set, so the mixed (server + client) case errors just like the pure-server case.
+==================================== INPUT ====================================
 //- UserCombinedPage.js
+// The resolver does NOT declare `@mayWaterfall`: it only ever returns the
+// shadowed record `page`, served by the main-operation transplant. Annotating
+// the consumer with `@waterfall` is therefore a hard error (`UnexpectedWaterfall`)
+// -- there is no cross-object refetch to acknowledge.
 /**
  * @relayField User.combined_page: IPage
  * @rootFragment UserCombinedPageResolverFragment
@@ -15,18 +14,6 @@ graphql`fragment UserCombinedPageResolverFragment on User {
     ...UserCombinedPageReturnFragment
   }
 }`
-
-//- ClientPageResolver.js
-/**
- * @relayType ClientPage implements IPage
- */
-export function ClientPage() {}
-
-//- ClientPageTitleResolver.js
-/**
- * @relayField ClientPage.title: String
- */
-export function title() {}
 
 //- UserConsumer.js
 graphql`query UserConsumerQuery {
@@ -62,3 +49,11 @@ interface IPage implements Node {
 }
 
 extend type Page implements IPage
+==================================== OUTPUT ===================================
+✖︎ Unexpected `@waterfall` directive on `combined_page`. This magic-fragment field's resolver does not declare `@mayWaterfall`, so it only ever returns the shadowed record (served by the transplant, with no waterfall). Remove `@waterfall`, or add `@mayWaterfall` to the resolver's docblock if it may return a pointer to a different server object.
+
+  UserConsumer.js:3:19
+    2 │   me {
+    3 │     combined_page @waterfall {
+      │                   ^^^^^^^^^^
+    4 │       title

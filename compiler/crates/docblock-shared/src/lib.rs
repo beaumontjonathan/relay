@@ -108,6 +108,13 @@ pub static HAS_OUTPUT_TYPE_ARGUMENT_NAME: LazyLock<ArgumentName> =
 /// schema definition containing the fragment name from the @returnFragment docblock tag.
 pub static RETURN_FRAGMENT_ARGUMENT_NAME: LazyLock<ArgumentName> =
     LazyLock::new(|| ArgumentName("return_fragment".intern()));
+/// Argument name for the `@relay_resolver` directive attached to a shadow
+/// resolver's schema definition indicating it had the `@mayWaterfall` docblock
+/// tag, i.e. the resolver may return a pointer to a different server object than
+/// the one it shadows, so every consumer must acknowledge the possible refetch
+/// with `@waterfall`.
+pub static MAY_WATERFALL_ARGUMENT_NAME: LazyLock<ArgumentName> =
+    LazyLock::new(|| ArgumentName("may_waterfall".intern()));
 /// Relay codegen/typegen needs to know how to import a given resolver type
 /// or field. This name is the argument to the `@relay_resolver` directive
 /// attached to the schema definition for resolver types and fields that
@@ -164,6 +171,12 @@ pub static ROOT_FRAGMENT_FIELD: LazyLock<StringKey> = LazyLock::new(|| "rootFrag
 /// Name of docblock tag used to indicate that a shadow resolver returns
 /// data conforming to a specific fragment's shape.
 pub static RETURN_FRAGMENT_FIELD: LazyLock<StringKey> = LazyLock::new(|| "returnFragment".intern());
+/// Name of the docblock tag used to declare that a shadow resolver
+/// (one with a `@returnFragment`) may return a pointer to a DIFFERENT server
+/// object than the one it shadows. When present, every consumer of the field
+/// must acknowledge the possible cross-object refetch with `@waterfall`;
+/// when absent, `@waterfall` on a consumer is rejected.
+pub static MAY_WATERFALL_FIELD: LazyLock<StringKey> = LazyLock::new(|| "mayWaterfall".intern());
 /// Internal, compiler-generated directive used as an escape hatch for shadow
 /// resolvers. The `@returnFragment` placeholder spread inside a shadow
 /// resolver's `@rootFragment` is converted into this directive on the

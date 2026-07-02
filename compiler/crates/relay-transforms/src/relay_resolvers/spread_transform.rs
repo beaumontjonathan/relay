@@ -228,6 +228,20 @@ impl<'program> RelayResolverSpreadTransform<'program> {
     ) -> Option<Vec<Selection>> {
         let field_metadata = RelayResolverFieldMetadata::find(metadata.backing_field.directives())?;
         let return_fragment = field_metadata.return_fragment?;
+
+        // The transplant runs whether or not the edge is in refetch mode (a
+        // `@waterfall` magic fragment, whose client-edge transform produced a
+        // non-empty `server_object_operations`). Transplanting the consumer's
+        // selections onto the shadowed server field serves the common case --
+        // where the resolver's returned pointer targets the same record the
+        // shadowed field navigates to -- entirely from the store, with no network
+        // roundtrip. When the pointer instead targets a different server object,
+        // that record's selections are absent from the store and the runtime's
+        // client-edge availability check fires the generated `ClientEdgeQuery`
+        // refetch. The two arms are complementary: the transplant populates the
+        // common case, the refetch backstops the cross-object case, and the
+        // runtime selects between them per read based on what is in the store.
+
         // A magic fragment (one declaring a `@returnFragment`) is required to
         // also declare a `@rootFragment` (enforced by the
         // `ReturnFragmentRequiresRootFragment` validation), and that root fragment

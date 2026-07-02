@@ -95,10 +95,13 @@ describe('RelayReader shadow resolver via ClientObject (unified path)', () => {
   // pointer. `modelResolvers` always contains the client model type, so a
   // returned server `__typename` falls through to the raw-store-record branch
   // while the client `__typename` routes through the model resolver.
-  const buildShadowEdgeFragment = (pointer: {
-    readonly __typename: string,
-    readonly id: string,
-  }): ReaderFragment => ({
+  const buildShadowEdgeFragment = (
+    pointer: {
+      readonly __typename: string,
+      readonly id: string,
+    },
+    serverObjectOperations: {[string]: ConcreteRequest} | null = null,
+  ): ReaderFragment => ({
     argumentDefinitions: [],
     kind: 'Fragment',
     metadata: {hasClientEdges: true},
@@ -120,7 +123,7 @@ describe('RelayReader shadow resolver via ClientObject (unified path)', () => {
             modelResolvers: {
               ClientPage: clientPageModelResolver,
             },
-            serverObjectOperations: null,
+            serverObjectOperations,
             backingField: {
               kind: 'RelayResolver',
               name: 'combined_page',
@@ -378,5 +381,104 @@ describe('RelayReader shadow resolver via ClientObject (unified path)', () => {
     // No `serverObjectOperations`, present record -> null traversal segment, so
     // nothing is enqueued for a waterfall.
     expect(missingClientEdges?.length ?? 0).toEqual(0);
+  });
+
+  // `@waterfall` on a shadow server arm keeps BOTH the main-operation transplant
+  // AND a generated `ClientEdgeQuery` refetch backstop (`serverObjectOperations`
+  // populated). The two are complementary, not mutually exclusive: the transplant
+  // serves the COMMON case (the resolver's pointer targets the same record the
+  // shadowed field already normalized) entirely from the store, while the backstop
+  // refetches only the DRAFT case (the pointer targets a DIFFERENT server object
+  // absent from the store). The reader selects between them per read -- a present
+  // record never enqueues a waterfall even though the backstop exists; a missing
+  // one does. These two tests guard the runtime half of removing the transplant
+  // skip-guard under `@waterfall`.
+  describe('@waterfall server arm: transplant + ClientEdgeQuery backstop', () => {
+    // Any ConcreteRequest serves as the refetch operation reference; the reader
+    // only stashes it on the traversal path and surfaces it in
+    // `missingClientEdges` when (and only when) the pointed-to record's
+    // selections are missing.
+    const REFETCH_OPERATION = OWNER_QUERY;
+
+    it('serves the COMMON case from the store with no waterfall when the pointer targets the transplanted record', () => {
+      // The resolver returns a pointer to server `Page` `100` -- the same record
+      // the transplant already normalized `title` onto. Even though the
+      // `@waterfall` backstop is present, the in-store read satisfies `title`, so
+      // NO refetch is enqueued.
+      const source = RelayRecordSource.create({
+        '1': {__id: '1', __typename: 'User', id: '1'},
+        '100': {
+          __id: '100',
+          __typename: 'Page',
+          id: '100',
+          title: 'Server Page Title',
+        },
+        'client:root': {
+          __id: 'client:root',
+          __typename: '__Root',
+          me: {__ref: '1'},
+        },
+      });
+      const store = new RelayStore(source);
+      const resolverCache = new LiveResolverCache(() => source, store);
+      const selector = createReaderSelector(
+        buildShadowEdgeFragment(
+          {__typename: 'Page', id: '100'},
+          {Page: REFETCH_OPERATION},
+        ),
+        ROOT_ID,
+        {},
+        ownerOperation.request,
+      );
+      const {data, missingClientEdges} = read(
+        source,
+        selector,
+        null,
+        resolverCache,
+      );
+      expect(getCombinedPageTitle(data)).toEqual('Server Page Title');
+      // The transplant populated the common case, so the backstop never fires.
+      expect(missingClientEdges?.length ?? 0).toEqual(0);
+    });
+
+    it('fires the ClientEdgeQuery backstop for the DRAFT case when the pointer targets a different, absent server object', () => {
+      // The resolver returns a pointer to server `Page` `200` -- a DIFFERENT
+      // record than the transplant populated (`100`). `200` is absent from the
+      // store, so the read enqueues a single missing client edge carrying the
+      // backstop refetch operation, keyed by the pointed-to id.
+      const source = RelayRecordSource.create({
+        '1': {__id: '1', __typename: 'User', id: '1'},
+        // Only the transplanted record `100` is present; the resolver points
+        // elsewhere (`200`), which the store does not have.
+        '100': {
+          __id: '100',
+          __typename: 'Page',
+          id: '100',
+          title: 'Server Page Title',
+        },
+        'client:root': {
+          __id: 'client:root',
+          __typename: '__Root',
+          me: {__ref: '1'},
+        },
+      });
+      const store = new RelayStore(source);
+      const resolverCache = new LiveResolverCache(() => source, store);
+      const selector = createReaderSelector(
+        buildShadowEdgeFragment(
+          {__typename: 'Page', id: '200'},
+          {Page: REFETCH_OPERATION},
+        ),
+        ROOT_ID,
+        {},
+        ownerOperation.request,
+      );
+      const {missingClientEdges} = read(source, selector, null, resolverCache);
+      // Exactly one waterfall is enqueued, targeting the pointed-to record and
+      // carrying the generated backstop operation.
+      expect(missingClientEdges?.length ?? 0).toEqual(1);
+      expect(missingClientEdges?.[0]?.clientEdgeDestinationID).toEqual('200');
+      expect(missingClientEdges?.[0]?.request).toBe(REFETCH_OPERATION);
+    });
   });
 });

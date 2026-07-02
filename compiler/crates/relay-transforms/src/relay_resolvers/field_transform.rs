@@ -18,6 +18,7 @@ use docblock_shared::IMPORT_NAME_ARGUMENT_NAME;
 use docblock_shared::IMPORT_PATH_ARGUMENT_NAME;
 use docblock_shared::INJECT_FRAGMENT_DATA_ARGUMENT_NAME;
 use docblock_shared::LIVE_ARGUMENT_NAME;
+use docblock_shared::MAY_WATERFALL_ARGUMENT_NAME;
 use docblock_shared::RELAY_RESOLVER_DIRECTIVE_NAME;
 use docblock_shared::RELAY_RESOLVER_WEAK_OBJECT_DIRECTIVE;
 use docblock_shared::RESOLVER_PROPERTY_LOOKUP_NAME;
@@ -82,6 +83,9 @@ pub struct ResolverInfo {
     pub type_confirmed: bool,
     pub resolver_type: ResolverSchemaGenType,
     pub(crate) return_fragment: Option<WithLocation<FragmentDefinitionName>>,
+    /// The resolver declared `@mayWaterfall`: it may return a pointer to a
+    /// different server object, so consumers must acknowledge with `@waterfall`.
+    pub(crate) may_waterfall: bool,
 }
 
 // Public API
@@ -386,6 +390,7 @@ pub fn get_resolver_info(
             let live = get_bool_argument_is_true(arguments, *LIVE_ARGUMENT_NAME);
             let has_output_type =
                 get_bool_argument_is_true(arguments, *HAS_OUTPUT_TYPE_ARGUMENT_NAME);
+            let may_waterfall = get_bool_argument_is_true(arguments, *MAY_WATERFALL_ARGUMENT_NAME);
             let import_name =
                 get_argument_value(arguments, *IMPORT_NAME_ARGUMENT_NAME, error_location).ok();
             let inject_fragment_data = get_argument_value(
@@ -443,6 +448,7 @@ pub fn get_resolver_info(
                 type_confirmed,
                 resolver_type,
                 return_fragment,
+                may_waterfall,
             })
         })
 }

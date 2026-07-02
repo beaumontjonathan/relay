@@ -587,6 +587,7 @@ impl RelayResolverExtractor {
                         type_,
                         root_fragment,
                         return_fragment: None,
+                        may_waterfall: None,
                         location: field.field_name.location,
                         deprecated: field.deprecated,
                         live,

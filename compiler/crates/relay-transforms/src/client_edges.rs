@@ -102,20 +102,25 @@ associated_data_impl!(ClientEdgeMetadataDirective);
 ///
 /// A regular client edge to an abstract type needs a `ClientEdgeQuery` per
 /// server-type implementor (recorded as a `ClientEdgeServerObjectOperation`) so
-/// the runtime can refetch the server record. A magic fragment does not: it
+/// the runtime can refetch the server record. A magic fragment always
 /// transplants the consumer's selections onto the shadowed server field in the
-/// main operation, so the server members are already fetched there and no
-/// refetch query is needed.
+/// main operation, so the common case (the returned pointer targets the
+/// shadowed record) needs no refetch. It still generates a `ClientEdgeQuery`
+/// when `@waterfall` opts in to the cross-object backstop -- the transplant and
+/// the refetch are complementary, and the runtime picks between them per read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ServerObjectOperationMode {
-    /// Regular client edge: generate a `ClientEdgeQuery` and record a
-    /// `ClientEdgeServerObjectOperation` for each server-type implementor.
+    /// Regular client edge, or a `@waterfall` magic fragment: generate a
+    /// `ClientEdgeQuery` and record a `ClientEdgeServerObjectOperation` for each
+    /// server-type implementor. For a magic fragment this is the cross-object
+    /// refetch backstop that fires only when the returned pointer is missing
+    /// from the store; the transplant still serves the common case.
     GenerateWaterfallOperations,
-    /// Magic fragment: collect model resolvers for client-extension members as
-    /// usual, but generate no `ClientEdgeQuery` and record no
-    /// `ClientEdgeServerObjectOperation` (so `server_object_operations` stays
-    /// empty). The server members are fetched by the transplant in the main
-    /// operation.
+    /// Magic fragment without `@waterfall`: collect model resolvers for
+    /// client-extension members as usual, but generate no `ClientEdgeQuery` and
+    /// record no `ClientEdgeServerObjectOperation` (so `server_object_operations`
+    /// stays empty). The server members are fetched solely by the transplant in
+    /// the main operation; a cross-object pointer has no refetch backstop.
     SuppressForMagicFragmentTransplant,
 }
 
@@ -616,27 +621,35 @@ impl<'program, 'pc> ClientEdgesTransform<'program, 'pc> {
     ///
     /// Reuses the shared `get_client_object_for_abstract_type` helper — so model
     /// resolvers for client-extension members are minted exactly as on the
-    /// regular client-edge path — but in `SuppressForMagicFragmentTransplant` mode, so
-    /// no `ClientEdgeQuery` is generated and `server_object_operations` stays
-    /// empty. The consumer's selections for any server member are transplanted
-    /// onto the shadowed server field in the main operation by
-    /// `relay_resolvers_spread_transform`, so there is no waterfall.
+    /// regular client-edge path.
     ///
-    /// The caller has already rejected `@waterfall` on magic-fragment fields, so the
-    /// regular wrapper's required-waterfall and mixed-with-exec-time rules (which
-    /// key on a non-empty `server_object_operations`) must not run here — that is
-    /// why this does not call `get_edge_to_client_object_metadata_directive`.
+    /// `is_waterfall` selects how server members are served:
+    /// - `false` (default, no `@waterfall`): `SuppressForMagicFragmentTransplant` — no
+    ///   `ClientEdgeQuery` is generated and `server_object_operations` stays empty;
+    ///   the consumer's selections for a server member are transplanted onto the
+    ///   shadowed server field in the main operation by
+    ///   `relay_resolvers_spread_transform`, so there is no waterfall.
+    /// - `true` (`@waterfall` opt-in): `GenerateWaterfallOperations` — the
+    ///   server member's pointer targets a different object not covered by the
+    ///   transplant, so a `ClientEdgeQuery` refetch is generated exactly as for a
+    ///   regular client-edge-to-server-object.
     fn get_edge_to_magic_fragment_client_object_metadata_directive(
         &mut self,
         field: &LinkedField,
         edge_to_type: Type,
+        is_waterfall: bool,
     ) -> Option<ClientEdgeMetadataDirective> {
         let (members, abstract_type_name) = self.abstract_type_members(edge_to_type)?;
+        let server_object_operation_mode = if is_waterfall {
+            ServerObjectOperationMode::GenerateWaterfallOperations
+        } else {
+            ServerObjectOperationMode::SuppressForMagicFragmentTransplant
+        };
         self.get_client_object_for_abstract_type(
             members.iter(),
             abstract_type_name,
             field,
-            ServerObjectOperationMode::SuppressForMagicFragmentTransplant,
+            server_object_operation_mode,
         )
     }
 
@@ -901,18 +914,18 @@ impl<'program, 'pc> ClientEdgesTransform<'program, 'pc> {
     /// waterfall), so they are routed through the `ClientObject` edge in suppress
     /// mode rather than the regular client-object / server-object client-edge
     /// paths.
-    fn is_shadow_resolver_field(&self, field_type: &schema::Field) -> bool {
+    fn shadow_resolver_info(&self, field_type: &schema::Field) -> Option<ResolverInfo> {
         // `get_resolver_info` may surface diagnostics, but those are also raised
         // (and reported) by the `relay_resolvers` field transform that runs
-        // after this pass. Here we only need the boolean signal of whether a
-        // `@returnFragment` is present, so we ignore any diagnostics.
-        matches!(
-            get_resolver_info(&self.program.schema, field_type, field_type.name.location),
-            Some(Ok(ResolverInfo {
-                return_fragment: Some(_),
-                ..
-            }))
-        )
+        // after this pass. Here we only need the resolver signal, so we ignore
+        // any diagnostics. Surfacing the full `ResolverInfo` (rather than a bool)
+        // lets the caller also read resolver-declared facts like `@mayWaterfall`.
+        match get_resolver_info(&self.program.schema, field_type, field_type.name.location) {
+            Some(Ok(resolver_info)) if resolver_info.return_fragment.is_some() => {
+                Some(resolver_info)
+            }
+            _ => None,
+        }
     }
 
     fn transform_linked_field_impl(&mut self, field: &LinkedField) -> Transformed<Selection> {
@@ -952,32 +965,72 @@ impl<'program, 'pc> ClientEdgesTransform<'program, 'pc> {
             .replace_or_else(|| field.selections.clone());
 
         // Magic fragment: a resolver that shadows a server field and returns a
-        // pointer (DataID) read off the already-normalized record. Its consumer
-        // selections are transplanted onto the shadowed server field in the main
-        // operation, so there is NO waterfall. Route it through the shared
-        // `ClientObject` machinery in suppress mode: client-extension members get
-        // their model resolvers via the existing `@edgeTo` dispatch, while server
-        // members generate no `ClientEdgeQuery` and no `server_object_operations`
-        // (they are fetched by the transplant in the main operation).
+        // pointer (DataID) read off a normalized record. Its consumer selections
+        // are always transplanted onto the shadowed server field in the main
+        // operation (see `shadow_transplant_selection`), which serves the common
+        // case -- pointer targets the shadowed record -- from the store with no
+        // waterfall. Route it through the shared `ClientObject` machinery:
+        // client-extension members get their model resolvers via the existing
+        // `@edgeTo` dispatch; server members either suppress the `ClientEdgeQuery`
+        // (transplant-only) or also generate one as a cross-object refetch
+        // backstop, selected by `@waterfall` below.
         //
         // Gated on the feature flag first so non-adopting projects skip the
-        // `get_resolver_info` reparse inside `is_shadow_resolver_field` for every
+        // `get_resolver_info` reparse inside `shadow_resolver_info` for every
         // client edge: a valid magic fragment can only exist when
         // `enable_shadow_resolvers` is fully enabled.
-        if self
+        let shadow_resolver_info = if self
             .project_config
             .feature_flags
             .enable_shadow_resolvers
             .is_fully_enabled()
-            && self.is_shadow_resolver_field(field_type)
         {
-            // `@waterfall` on a magic-fragment field is a hard error: the field is
-            // explicitly NOT a waterfall (its selections are fetched in the main
-            // op). Detect this before the missing/required-waterfall checks that
-            // the regular client-object / server-object paths would apply.
-            if let Some(directive) = waterfall_directive {
+            self.shadow_resolver_info(field_type)
+        } else {
+            None
+        };
+        if let Some(resolver_info) = shadow_resolver_info {
+            // Whether a magic fragment can return a pointer to a DIFFERENT server
+            // object is a runtime property the compiler cannot decide statically,
+            // so the RESOLVER declares it once via `@mayWaterfall`. That single
+            // declaration drives `@waterfall` enforcement uniformly across every
+            // consumer, rather than each consumer opting in ad hoc:
+            //   - declared   -> each consumer MUST acknowledge the possible
+            //     cross-object refetch with `@waterfall` (else `MissingWaterfall`).
+            //   - undeclared -> the resolver only ever returns the shadowed
+            //     record, served by the transplant, so a consumer `@waterfall`
+            //     is unexpected (`UnexpectedWaterfall`).
+            //
+            // The transplant always runs, so the common case (pointer targets the
+            // shadowed record) is served from the store with no roundtrip. When
+            // the resolver may waterfall, server members ALSO generate a
+            // `ClientEdgeQuery` cross-object refetch backstop that the runtime's
+            // client-edge availability check fires only when the returned pointer
+            // is missing from the store.
+            let magic_fragment_waterfall = resolver_info.may_waterfall;
+
+            if magic_fragment_waterfall {
+                if waterfall_directive.is_none() {
+                    // On this error path the metadata directive is still built
+                    // below in `GenerateWaterfallOperations` mode (the field has
+                    // no `@waterfall`), but the pushed error aborts compilation
+                    // before that artifact is emitted -- matching the
+                    // collect-errors-and-continue pattern used elsewhere here.
+                    self.errors.push(Diagnostic::error_with_data(
+                        ValidationMessageWithData::RelayResolversMissingWaterfall {
+                            field_name: field_type.name.item,
+                        },
+                        field.definition.location,
+                    ));
+                }
+            } else if let Some(directive) = waterfall_directive {
+                // The field IS backed by client-edge machinery, so the generic
+                // "unexpected @waterfall" message would mislead; point the author
+                // at the resolver's missing `@mayWaterfall` declaration instead.
                 self.errors.push(Diagnostic::error_with_data(
-                    ValidationMessageWithData::RelayResolversUnexpectedWaterfall,
+                    ValidationMessageWithData::MagicFragmentUnexpectedWaterfall {
+                        field_name: field_type.name.item,
+                    },
                     directive.location,
                 ));
             }
@@ -1007,8 +1060,11 @@ impl<'program, 'pc> ClientEdgesTransform<'program, 'pc> {
             }
 
             let metadata_directive = match self
-                .get_edge_to_magic_fragment_client_object_metadata_directive(field, edge_to_type)
-            {
+                .get_edge_to_magic_fragment_client_object_metadata_directive(
+                    field,
+                    edge_to_type,
+                    magic_fragment_waterfall,
+                ) {
                 Some(directive) => directive,
                 None => return Transformed::Keep,
             };

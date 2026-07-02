@@ -344,6 +344,11 @@ pub enum ValidationMessageWithData {
     RelayResolversUnexpectedWaterfall,
 
     #[error(
+        "Unexpected `@waterfall` directive on `{field_name}`. This magic-fragment field's resolver does not declare `@mayWaterfall`, so it only ever returns the shadowed record (served by the transplant, with no waterfall). Remove `@waterfall`, or add `@mayWaterfall` to the resolver's docblock if it may return a pointer to a different server object."
+    )]
+    MagicFragmentUnexpectedWaterfall { field_name: StringKey },
+
+    #[error(
         "Unexpected `@required` directive on a non-null field. This field is already non-null and does not need the `@required` directive."
     )]
     RequiredOnNonNull,
@@ -393,6 +398,9 @@ impl WithDiagnosticData for ValidationMessageWithData {
                 vec![Box::new(format!("{field_name} @waterfall",))]
             }
             ValidationMessageWithData::RelayResolversUnexpectedWaterfall => {
+                vec![Box::new("")]
+            }
+            ValidationMessageWithData::MagicFragmentUnexpectedWaterfall { .. } => {
                 vec![Box::new("")]
             }
             ValidationMessageWithData::RequiredOnNonNull => {
