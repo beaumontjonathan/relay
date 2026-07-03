@@ -49,10 +49,10 @@ pub async fn transform_fixture(fixture: &Fixture<'_>) -> Result<String, String> 
             feature_flags,
             ..Default::default()
         };
-        let mut next_program = client_edges(&program, &project_config, &Default::default(), true)
-            .map_err(|diagnostics| {
-            diagnostics_to_sorted_string(fixture.content, &diagnostics)
-        })?;
+        let mut next_program =
+            client_edges(&program, &project_config, &Default::default(), true, false).map_err(
+                |diagnostics| diagnostics_to_sorted_string(fixture.content, &diagnostics),
+            )?;
 
         next_program = relay_resolvers(
             ProjectName::default(),

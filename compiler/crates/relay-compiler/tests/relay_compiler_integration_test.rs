@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @generated SignedSource<<4c0b0c5234f1eb547b73250908ffdcfe>>
+ * @generated SignedSource<<260e9397d2488697f630a3cea653cf63>>
  */
 
 mod relay_compiler_integration;
@@ -381,6 +381,13 @@ async fn mixed_interface_server_type_does_not_implement_node_invalid() {
     let input = include_str!("relay_compiler_integration/fixtures/mixed_interface_server_type_does_not_implement_node.invalid.input");
     let expected = include_str!("relay_compiler_integration/fixtures/mixed_interface_server_type_does_not_implement_node.invalid.expected");
     test_fixture(transform_fixture, file!(), "mixed_interface_server_type_does_not_implement_node.invalid.input", "relay_compiler_integration/fixtures/mixed_interface_server_type_does_not_implement_node.invalid.expected", input, expected).await;
+}
+
+#[tokio::test]
+async fn mixed_interface_strong_edge_waterfall() {
+    let input = include_str!("relay_compiler_integration/fixtures/mixed_interface_strong_edge_waterfall.input");
+    let expected = include_str!("relay_compiler_integration/fixtures/mixed_interface_strong_edge_waterfall.expected");
+    test_fixture(transform_fixture, file!(), "mixed_interface_strong_edge_waterfall.input", "relay_compiler_integration/fixtures/mixed_interface_strong_edge_waterfall.expected", input, expected).await;
 }
 
 #[tokio::test]

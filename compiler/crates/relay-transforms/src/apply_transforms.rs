@@ -280,7 +280,7 @@ fn apply_reader_transforms(
     program = log_event.time("catch_directive", || catch_directive(&program))?;
 
     program = log_event.time("client_edges", || {
-        client_edges(&program, project_config, &base_fragment_names, false)
+        client_edges(&program, project_config, &base_fragment_names, false, false)
     })?;
 
     program = log_event.time("relay_resolvers", || {
@@ -372,7 +372,7 @@ fn apply_operation_transforms(
     });
 
     program = log_event.time("client_edges", || {
-        client_edges(&program, project_config, &base_fragment_names, true)
+        client_edges(&program, project_config, &base_fragment_names, true, false)
     })?;
 
     program = log_event.time("relay_resolvers", || {
@@ -748,7 +748,7 @@ fn apply_typegen_transforms(
     });
 
     program = log_event.time("client_edges", || {
-        client_edges(&program, project_config, &base_fragment_names, false)
+        client_edges(&program, project_config, &base_fragment_names, false, true)
     })?;
 
     program = log_event.time("relay_resolvers", || {

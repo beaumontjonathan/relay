@@ -51,16 +51,17 @@ pub async fn transform_fixture(fixture: &Fixture<'_>) -> Result<String, String> 
             feature_flags,
             ..Default::default()
         };
-        let next_program = &client_edges(&program, &project_config, &Default::default(), false)
-            .and_then(|program| {
-                relay_resolvers(
-                    ProjectName::default(),
-                    &program,
-                    &project_config.feature_flags,
-                    ResolversPipeline::ForOperation,
-                )
-            })
-            .unwrap();
+        let next_program =
+            &client_edges(&program, &project_config, &Default::default(), false, false)
+                .and_then(|program| {
+                    relay_resolvers(
+                        ProjectName::default(),
+                        &program,
+                        &project_config.feature_flags,
+                        ResolversPipeline::ForOperation,
+                    )
+                })
+                .unwrap();
         let mut result = next_program
             .fragments()
             .map(|def| {
