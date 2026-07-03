@@ -270,14 +270,14 @@ fn convert_spreads_in_selections(
                     .iter()
                     .find_map(|child| matched_placeholder(child, return_fragments))
                 {
-                    // Drop the placeholder spread and inject the pointer
-                    // selection (`id __typename`) as the field's minimal
+                    // Drop the placeholder spread and inject the shadowed
+                    // field's identity selection (`id __typename`) as its minimal
                     // selection.
                     linked_field
                         .selections
                         .items
                         .retain(|child| matched_placeholder(child, return_fragments).is_none());
-                    inject_pointer_selection(&mut linked_field.selections.items);
+                    inject_identity_selection(&mut linked_field.selections.items);
                     linked_field
                         .directives
                         .push(shadow_return_directive(return_fragment));
@@ -310,10 +310,22 @@ fn matched_placeholder(
     }
 }
 
-/// Ensure `id` and `__typename` scalar fields are present in the selection set,
-/// adding any that are missing. These form the pointer (DataID) the shadow
-/// resolver returns.
-fn inject_pointer_selection(selections: &mut Vec<Selection>) {
+/// Ensure the shadowed field's identity selection (`id` and `__typename`) is
+/// present in the selection set, adding any that are missing.
+///
+/// This runs at the syntax/AST rail (before `build_ir`), so it cannot consult the
+/// resolver's lowered `output_type_info`. For the strong/`EdgeTo` arm and the
+/// client-`@weak` arm, the shadowed field is a server navigation the
+/// resolver reads from, so `[id, __typename]` is the correct identity selection
+/// in both cases (the strong arm reads the returned DataID pointer; the
+/// client-weak arm reads the model instance INLINE and the identity selection is
+/// just the resolver's own input).
+///
+/// TODO(server-value return): a non-Node server VALUE return read
+/// in-place will need to inject `__id` (`schema.clientid_field()`) instead of the
+/// `id` field. That arm must branch on the resolver's classification; thread it
+/// through here rather than re-deriving weak-ness in this AST-rail pass.
+fn inject_identity_selection(selections: &mut Vec<Selection>) {
     for field_name in ["id", "__typename"] {
         let interned = field_name.intern();
         let already_present = selections.iter().any(|selection| {

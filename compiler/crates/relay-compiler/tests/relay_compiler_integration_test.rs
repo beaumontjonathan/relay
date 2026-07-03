@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @generated SignedSource<<260e9397d2488697f630a3cea653cf63>>
+ * @generated SignedSource<<22ecb76a8105786ce98af04f7835bbed>>
  */
 
 mod relay_compiler_integration;
@@ -976,6 +976,20 @@ async fn shadow_resolver_magic_fragment_waterfall() {
     let input = include_str!("relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_waterfall.input");
     let expected = include_str!("relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_waterfall.expected");
     test_fixture(transform_fixture, file!(), "shadow_resolver_magic_fragment_waterfall.input", "relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_waterfall.expected", input, expected).await;
+}
+
+#[tokio::test]
+async fn shadow_resolver_magic_fragment_weak_concrete() {
+    let input = include_str!("relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_weak_concrete.input");
+    let expected = include_str!("relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_weak_concrete.expected");
+    test_fixture(transform_fixture, file!(), "shadow_resolver_magic_fragment_weak_concrete.input", "relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_weak_concrete.expected", input, expected).await;
+}
+
+#[tokio::test]
+async fn shadow_resolver_magic_fragment_weak_concrete_waterfall_invalid() {
+    let input = include_str!("relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_weak_concrete_waterfall.invalid.input");
+    let expected = include_str!("relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_weak_concrete_waterfall.invalid.expected");
+    test_fixture(transform_fixture, file!(), "shadow_resolver_magic_fragment_weak_concrete_waterfall.invalid.input", "relay_compiler_integration/fixtures/shadow_resolver_magic_fragment_weak_concrete_waterfall.invalid.expected", input, expected).await;
 }
 
 #[tokio::test]

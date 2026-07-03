@@ -20,7 +20,6 @@ use docblock_shared::INJECT_FRAGMENT_DATA_ARGUMENT_NAME;
 use docblock_shared::LIVE_ARGUMENT_NAME;
 use docblock_shared::MAY_WATERFALL_ARGUMENT_NAME;
 use docblock_shared::RELAY_RESOLVER_DIRECTIVE_NAME;
-use docblock_shared::RELAY_RESOLVER_WEAK_OBJECT_DIRECTIVE;
 use docblock_shared::RESOLVER_PROPERTY_LOOKUP_NAME;
 use docblock_shared::RETURN_FRAGMENT_ARGUMENT_NAME;
 use docblock_shared::TYPE_CONFIRMED_ARGUMENT_NAME;
@@ -39,6 +38,7 @@ use intern::Lookup;
 use intern::string_key::Intern;
 use intern::string_key::StringKey;
 use relay_config::ProjectName;
+use relay_schema::definitions::weak_object_instance_field;
 use schema::Field;
 use schema::FieldID;
 use schema::SDLSchema;
@@ -194,6 +194,14 @@ impl<'program> RelayResolverFieldTransform<'program> {
                         }
                     }
 
+                    // The single model-instance field of an `@weak` return
+                    // object, if the resolver's return type is a concrete `@weak`
+                    // model. A weak value has no DataID and no separate record to
+                    // refetch, so it must be read INLINE off
+                    // `<Type>____relay_model_instance` rather than via a pointer.
+                    let weak_object_instance_field =
+                        weak_object_instance_field(self.program.schema.as_ref(), inner_type);
+
                     // Shadow resolvers (those declaring a `@returnFragment`) must
                     // NEVER be treated as `@outputType` values. Doing so would
                     // emit a `$normalization` split operation and
@@ -203,10 +211,34 @@ impl<'program> RelayResolverFieldTransform<'program> {
                     // the already-normalized record via the client-edge reader
                     // selections. So `return_fragment.is_some()` dominates
                     // `has_output_type` and forces the `EdgeTo` path below.
+                    //
+                    // EXCEPTION: a `@returnFragment` resolver whose return type is
+                    // a concrete `@weak` model has no pointer to return (no
+                    // DataID) — it must reach the inline `Composite`/WeakModel arm
+                    // just like a non-shadow weak `@outputType` resolver does. So
+                    // the `EdgeTo` suppression applies only to NON-weak returns.
                     let has_output_type =
                         resolver_info.has_output_type && resolver_info.return_fragment.is_none();
 
-                    let output_type_info = if has_output_type {
+                    let output_type_info = if weak_object_instance_field.is_some() {
+                        // Concrete `@weak` return: route to the inline arm,
+                        // carrying the model-instance field so `build_ast` emits
+                        // `normalizationInfo.kind: "WeakModel"` and the reader
+                        // reads the value inline (no pointer, no refetch). This
+                        // covers both `@outputType` weak resolvers and shadow
+                        // (`@returnFragment`) weak resolvers.
+                        let normalization_operation = generate_name_for_nested_object_operation(
+                            self.project_name,
+                            &self.program.schema,
+                            self.program.schema.field(field.definition().item),
+                        );
+                        ResolverOutputTypeInfo::Composite(ResolverNormalizationInfo {
+                            inner_type,
+                            plural: schema_field.type_.is_list(),
+                            normalization_operation,
+                            weak_object_instance_field,
+                        })
+                    } else if has_output_type {
                         if inner_type.is_composite_type() {
                             let normalization_operation = generate_name_for_nested_object_operation(
                                 self.project_name,
@@ -214,31 +246,12 @@ impl<'program> RelayResolverFieldTransform<'program> {
                                 self.program.schema.field(field.definition().item),
                             );
 
-                            let weak_object_instance_field =
-                                inner_type.get_object_id().and_then(|id| {
-                                    let object = self.program.schema.object(id);
-                                    if object
-                                        .directives
-                                        .named(*RELAY_RESOLVER_WEAK_OBJECT_DIRECTIVE)
-                                        .is_some()
-                                    {
-                                        // This is expect to be `__relay_model_instance`
-                                        // TODO: Add validation/panic to assert that weak object has only
-                                        // one field here, and it's a magic relay instance field.
-                                        Some(*object.fields.first().unwrap())
-                                    } else {
-                                        None
-                                    }
-                                });
-
-                            ResolverOutputTypeInfo::Composite(
-                                ResolverNormalizationInfo {
-                                    inner_type,
-                                    plural: schema_field.type_.is_list(),
-                                    normalization_operation,
-                                    weak_object_instance_field,
-                                },
-                            )
+                            ResolverOutputTypeInfo::Composite(ResolverNormalizationInfo {
+                                inner_type,
+                                plural: schema_field.type_.is_list(),
+                                normalization_operation,
+                                weak_object_instance_field: None,
+                            })
                         } else {
                             ResolverOutputTypeInfo::ScalarField
                         }

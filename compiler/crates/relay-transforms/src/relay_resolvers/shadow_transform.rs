@@ -141,23 +141,29 @@ impl<'program> ShadowResolversTransform<'program> {
         }
 
         // A magic fragment's return type must be an interface, not a CONCRETE
-        // OBJECT. The routing fans the consumer's selection per concrete
-        // implementor (via `relay_resolvers_abstract_types`) and dispatches at
-        // read time on the resolver's returned `__typename`. A concrete object
-        // has no implementors to fan, so `client_edges` finds no abstract members
-        // (`abstract_type_members` returns `None`) and would silently drop the
-        // magic-fragment routing. Gate it here with a focused error instead of
-        // emitting a broken artifact. (List and union returns are already
-        // rejected above; non-composite returns like `RelayResolverValue` fail
-        // their own validation paths.)
-        if matches!(schema_field.type_.inner(), Type::Object(_)) {
+        // OBJECT -- EXCEPT the read-in-place inline flavors, which have no
+        // implementors to fan and are read directly off the backing record: a
+        // concrete `@weak` model is read off `<Type>____relay_model_instance`,
+        // so it has no pointer and needs no per-`__typename` fan-out. Any other
+        // concrete object DOES need the interface fan-out (its consumer selection
+        // is dispatched at read time on the resolver's returned `__typename`); a
+        // concrete object has no implementors to fan, so `client_edges` finds no
+        // abstract members (`abstract_type_members` returns `None`) and would
+        // silently drop the magic-fragment routing. Gate those here with a
+        // focused error instead of emitting a broken artifact. (List and union
+        // returns are already rejected above; non-composite returns like
+        // `RelayResolverValue` fail their own validation paths.)
+        let inner = schema_field.type_.inner();
+        let is_inline_object_flavor = relay_schema::definitions::weak_object_instance_field(
+            self.program.schema.as_ref(),
+            inner,
+        )
+        .is_some();
+        if matches!(inner, Type::Object(_)) && !is_inline_object_flavor {
             self.errors.push(Diagnostic::error(
                 ValidationMessage::MagicFragmentConcreteObjectReturnUnsupported {
                     field_name: schema_field.name.item,
-                    type_name: self
-                        .program
-                        .schema
-                        .get_type_name(schema_field.type_.inner()),
+                    type_name: self.program.schema.get_type_name(inner),
                 },
                 location,
             ));

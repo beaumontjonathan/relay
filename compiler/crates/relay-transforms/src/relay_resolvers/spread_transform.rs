@@ -27,6 +27,7 @@ use graphql_ir::TransformedValue;
 use graphql_ir::Transformer;
 use graphql_ir::VariableName;
 use intern::string_key::StringKey;
+use relay_schema::definitions::weak_object_instance_field;
 use schema::FieldID;
 use schema::Schema;
 use schema::Type;
@@ -228,6 +229,23 @@ impl<'program> RelayResolverSpreadTransform<'program> {
     ) -> Option<Vec<Selection>> {
         let field_metadata = RelayResolverFieldMetadata::find(metadata.backing_field.directives())?;
         let return_fragment = field_metadata.return_fragment?;
+
+        // A shadow resolver whose return type is a concrete `@weak` model reads
+        // its value INLINE off `<Type>____relay_model_instance` (the value is
+        // produced by the resolver, not fetched from the server), so there is
+        // nothing to transplant onto a shadowed server field. Skip the transplant
+        // entirely: rebinding the consumer's selections (which are weak-model
+        // resolver fields carrying `RelayResolverFieldMetadata`) onto the shadowed
+        // server type would emit unlowerable resolver metadata on a server field.
+        let edge_to_type = self
+            .program
+            .schema
+            .field(metadata.linked_field.definition.item)
+            .type_
+            .inner();
+        if weak_object_instance_field(self.program.schema.as_ref(), edge_to_type).is_some() {
+            return None;
+        }
 
         // The transplant runs whether or not the edge is in refetch mode (a
         // `@waterfall` magic fragment, whose client-edge transform produced a

@@ -1159,11 +1159,26 @@ impl<'program, 'pc> ClientEdgesTransform<'program, 'pc> {
         // `get_resolver_info` reparse inside `shadow_resolver_info` for every
         // client edge: a valid magic fragment can only exist when
         // `enable_shadow_resolvers` is fully enabled.
+        // A shadow resolver (`@returnFragment`) whose return type is a CONCRETE
+        // `@weak` model has no DataID pointer and no server record to transplant:
+        // the weak value is produced by the resolver and read INLINE off
+        // `<Type>____relay_model_instance`. It must NOT enter the magic-fragment
+        // transplant branch (which transplants consumer selections onto a shadowed
+        // *server* field). Instead it falls through to the regular client-object
+        // path below, where the `Type::Object` arm builds a `ClientObject` with
+        // empty `model_resolvers` (a `@weak` object yields no model resolver) and
+        // the value is read inline. The `field_transform` routing already marks it
+        // as the inline `Composite`/WeakModel arm. The `@returnFragment`
+        // `@rootFragment` data dependency (and its `@__relay_shadow_return` marker)
+        // is consumed/stripped by the normal resolver + codegen passes.
+        let is_concrete_weak_return = edge_to_type.is_weak_resolver_object(schema.as_ref());
+
         let shadow_resolver_info = if self
             .project_config
             .feature_flags
             .enable_shadow_resolvers
             .is_fully_enabled()
+            && !is_concrete_weak_return
         {
             self.shadow_resolver_info(field_type)
         } else {
