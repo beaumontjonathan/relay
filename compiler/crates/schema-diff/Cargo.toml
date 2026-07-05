@@ -19,5 +19,5 @@ graphql-syntax = { path = "../graphql-syntax" }
 intern = { path = "../intern" }
 rayon = "1.11.0"
 relay-config = { path = "../relay-config" }
-rustc-hash = "2.1.2"
+rustc-hash = "2.1.3"
 schema = { path = "../schema" }
