@@ -647,7 +647,7 @@ Text Schema:Schema {
         ],
         type_: NonNull(
             Named(
-                Scalar(8),
+                Scalar(3),
             ),
         ),
         directives: [],

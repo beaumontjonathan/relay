@@ -1262,6 +1262,10 @@ impl InMemorySchema {
             .type_map
             .get(&"String".intern())
             .expect("Missing String type");
+        let boolean_type = *self
+            .type_map
+            .get(&"Boolean".intern())
+            .expect("Missing Boolean type");
         let is_fulfilled_field_id = self.fields.len();
         self.is_fulfilled_field = FieldID(is_fulfilled_field_id.try_into().unwrap());
         self.fields.push(Field {
@@ -1274,7 +1278,7 @@ impl InMemorySchema {
                 description: None,
                 directives: Default::default(),
             }]),
-            type_: TypeReference::NonNull(Box::new(TypeReference::Named(string_type))),
+            type_: TypeReference::NonNull(Box::new(TypeReference::Named(boolean_type))),
             directives: Vec::new(),
             parent_type: None,
             description: None,
@@ -2350,6 +2354,53 @@ mod tests {
         assert!(
             interface.implementing_objects.len() == 1,
             "ITunes should have an implementing object"
+        );
+    }
+
+    /// The `is_fulfilled__` meta-field must be typed as
+    /// `is_fulfilled__(name: String!): Boolean!`. This has to stay in sync with
+    /// the FlatBuffer backend (`IS_FULFILLED_FIELD_ID` in
+    /// `flatbuffer/wrapper.rs`); if the two backends disagree, consumers that
+    /// switch schema input format (e.g. flatbuffer client schema vs
+    /// `--schema-targets-file` target_nodes) get a divergent runtime schema for
+    /// this field, which breaks nullable/abstract type-spread fulfillment.
+    #[test]
+    fn test_is_fulfilled_field_returns_boolean() {
+        let sdl = "
+            type Query { me: Query }
+            scalar Boolean
+            scalar String
+            scalar ID
+        ";
+        let schema = InMemorySchema::build(
+            &[graphql_syntax::parse_schema_document(sdl, SourceLocationKey::generated()).unwrap()],
+            &[],
+        )
+        .expect("schema should build");
+
+        let field = schema.field(schema.is_fulfilled_field());
+
+        // Return type must be Boolean! (NonNull Boolean).
+        let return_named = field.type_.inner();
+        assert_eq!(
+            schema.get_type_name(return_named).lookup(),
+            "Boolean",
+            "is_fulfilled__ must return Boolean!, not String! (must match FlatBuffer backend)"
+        );
+        assert!(
+            matches!(field.type_, TypeReference::NonNull(_)),
+            "is_fulfilled__ return type must be NonNull"
+        );
+
+        // The `name` argument stays String!.
+        let name_arg = field
+            .arguments
+            .named(ArgumentName("name".intern()))
+            .expect("is_fulfilled__ should have a `name` argument");
+        assert_eq!(
+            schema.get_type_name(name_arg.type_.inner()).lookup(),
+            "String",
+            "is_fulfilled__ `name` argument must be String!"
         );
     }
 }
