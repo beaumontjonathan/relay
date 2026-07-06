@@ -1634,6 +1634,21 @@ pub(crate) fn raw_response_selections_to_babel(
                     .or_default()
                     .push(selection);
             }
+        } else if let Some(ct) = concrete_type {
+            // No concrete_type and no abstract_type on this selection, but we
+            // know the enclosing field's concrete return type. This happens
+            // when the same concrete field is selected via two paths:
+            // (1) directly — where raw_response_visit_selections stamps inner
+            // selections with concrete_type=Some(X); and (2) through an
+            // abstract interface spread — where the field's schema return type
+            // is abstract so the new-code path is skipped and inner selections
+            // keep concrete_type=None.
+            //
+            // Routing these untyped selections into the known concrete bucket
+            // (rather than into base_fields) prevents a spurious catch-all
+            // ExactObject from being generated, which would cause the raw
+            // response type to be an unnecessary union.
+            by_concrete_type.entry(ct).or_default().push(selection);
         } else {
             base_fields.push(selection);
         }

@@ -4,7 +4,7 @@
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
- * @generated SignedSource<<df1be6dc17d550445e4385cad31c5ae8>>
+ * @generated SignedSource<<f48801bdf137cf593a8655ca3cb9a480>>
  */
 
 mod generate_typescript;
@@ -367,6 +367,13 @@ async fn query_with_stream_connection() {
     let input = include_str!("generate_typescript/fixtures/query-with-stream-connection.graphql");
     let expected = include_str!("generate_typescript/fixtures/query-with-stream-connection.expected");
     test_fixture(transform_fixture, file!(), "query-with-stream-connection.graphql", "generate_typescript/fixtures/query-with-stream-connection.expected", input, expected).await;
+}
+
+#[tokio::test]
+async fn raw_response_concrete_field_via_interface_covariant_return() {
+    let input = include_str!("generate_typescript/fixtures/raw-response-concrete-field-via-interface-covariant-return.graphql");
+    let expected = include_str!("generate_typescript/fixtures/raw-response-concrete-field-via-interface-covariant-return.expected");
+    test_fixture(transform_fixture, file!(), "raw-response-concrete-field-via-interface-covariant-return.graphql", "generate_typescript/fixtures/raw-response-concrete-field-via-interface-covariant-return.expected", input, expected).await;
 }
 
 #[tokio::test]

@@ -31,7 +31,7 @@ fragment conditionsOnSelectionsOnInterfaceFragment on Cat {
   ... on Tabby @include(if: $has_owner) {
     __id @__RelayResolverMetadata
     # RelayResolverMetadata {
-    #     field_id: FieldID(532),
+    #     field_id: FieldID(534),
     #     import_path: "TabbyResolver",
     #     import_name: None,
     #     field_alias: None,
@@ -53,7 +53,7 @@ fragment conditionsOnSelectionsOnInterfaceFragment on Cat {
   ... on Tabby {
     __id @__RelayResolverMetadata
     # RelayResolverMetadata {
-    #     field_id: FieldID(533),
+    #     field_id: FieldID(535),
     #     import_path: "TabbyResolver",
     #     import_name: None,
     #     field_alias: None,
