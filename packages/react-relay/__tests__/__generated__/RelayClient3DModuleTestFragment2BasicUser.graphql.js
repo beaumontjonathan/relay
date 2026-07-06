@@ -6,7 +6,7 @@
  *
  * @oncall relay
  *
- * @generated SignedSource<<b3cca929c9f70e40ecf1daa974154e92>>
+ * @generated SignedSource<<2f99dcd5875685fecc669a9f5adf1191>>
  * @flow
  * @lightSyntaxTransform
  */
@@ -15,7 +15,7 @@
 
 'use strict';
 
-// @dataDrivenDependency RelayClient3DModuleTestFragment2BasicUser.basicUser {"branches":{"ClientUser":{"component":"ClientUser.react","fragment":"RelayClient3DModuleTestFragmentClientUser_data$normalization.graphql"},"SpecialUser":{"component":"SpecialUser.react","fragment":"RelayClient3DModuleTestFragmentSpecialUser_data$normalization.graphql"}},"plural":false}
+// @dataDrivenDependency RelayClient3DModuleTestFragment2BasicUser.basicUser {"branches":{"ClientUser":{"component":"ClientUser.react","fragment":"RelayClient3DModuleTestFragmentClientUser_data$normalization.graphql","read_time_resolvers":true},"SpecialUser":{"component":"SpecialUser.react","fragment":"RelayClient3DModuleTestFragmentSpecialUser_data$normalization.graphql","read_time_resolvers":true}},"plural":false}
 
 /*::
 import type { Fragment, ReaderFragment } from 'relay-runtime';

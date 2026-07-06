@@ -59,7 +59,7 @@ fragment NameRendererFragment on Persona @__RelayDataDrivenDependencyMetadata
 #         [
 #             (
 #                 "NameRendererFragment.basicUser",
-#                 "{\"branches\":{\"ClientUser\":{\"component\":\"ClientUser.react\",\"fragment\":\"ClientUser_Fragment$normalization.graphql\"},\"SpecialUser\":{\"component\":\"SpecialUser.react\",\"fragment\":\"SpecialUser_Fragment$normalization.graphql\"}},\"plural\":false}",
+#                 "{\"branches\":{\"ClientUser\":{\"component\":\"ClientUser.react\",\"fragment\":\"ClientUser_Fragment$normalization.graphql\",\"read_time_resolvers\":true},\"SpecialUser\":{\"component\":\"SpecialUser.react\",\"fragment\":\"SpecialUser_Fragment$normalization.graphql\",\"read_time_resolvers\":true}},\"plural\":false}",
 #             ),
 #         ],
 #     ),
