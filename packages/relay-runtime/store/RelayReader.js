@@ -460,7 +460,16 @@ class RelayReader {
         value = this._asResult(_value);
         break;
       case 'NULL':
-        if (this._fieldErrors != null && this._fieldErrors.length > 0) {
+        if (RelayFeatureFlags.ENABLE_CATCH_IGNORE_HANDLED_FIELD_ERRORS) {
+          // Only null the field when there are errors not yet handled by an
+          // inner @catch boundary.
+          if (
+            this._fieldErrors != null &&
+            this._fieldErrors.some(e => !e.handled)
+          ) {
+            value = null;
+          }
+        } else if (this._fieldErrors != null && this._fieldErrors.length > 0) {
           value = null;
         }
         break;
@@ -498,12 +507,21 @@ class RelayReader {
    * responsibility to ensure that errors are marked as handled.
    */
   _asResult<T>(value: T): Result<T, unknown> {
-    if (this._fieldErrors == null || this._fieldErrors.length === 0) {
+    // When ENABLE_CATCH_IGNORE_HANDLED_FIELD_ERRORS is off (the default), this
+    // method behaves exactly as before: all entries in _fieldErrors, including
+    // those already marked handled by an inner @catch, influence this boundary.
+    // When the flag is on, already-handled errors are excluded so that an inner
+    // @catch fully consumes its error without affecting outer boundaries.
+    const fieldErrors =
+      RelayFeatureFlags.ENABLE_CATCH_IGNORE_HANDLED_FIELD_ERRORS
+        ? this._fieldErrors?.filter(e => !e.handled)
+        : this._fieldErrors;
+    if (fieldErrors == null || fieldErrors.length === 0) {
       return {ok: true, value};
     }
 
     // TODO: Should we be hiding log level events here?
-    const errors = this._fieldErrors
+    const errors = fieldErrors
       .map(error => {
         switch (error.kind) {
           case 'relay_field_payload.error':
